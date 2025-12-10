@@ -1,5 +1,6 @@
 import glob
 import numpy as np
+import data
 from pathlib import Path
 
 import scipy as sp
@@ -18,16 +19,19 @@ def main():
     sample_files = get_all_samples(SAMPLE_LOCATION)
     first_sample = sample_files[1]
 
-    for i in sample_files[:5]:
-        waveform, sample_rate = torchaudio.load(i)
-        spectogram_transform = Spectrogram(n_fft=2048, normalized=True)
-        spectogram = spectogram_transform(waveform)
-        plot_spectrogram(spectogram[0])
+    # for i in sample_files[:5]:
+    #     waveform, sample_rate = torchaudio.load(i)
+    #     spectogram_transform = Spectrogram(n_fft=2048, normalized=True)
+    #     spectogram = spectogram_transform(waveform)
+    #     plot_spectrogram(spectogram[0])
+    spectrogram_transform = Spectrogram(n_fft=2048, normalized=True)
 
-    # waveform, sample_rate = torchaudio.load(first_sample)
-    # spectogram_transform = Spectrogram(n_fft=512)
-    # spectogram = spectogram_transform(waveform)
-    # plot_spectrogram(spectogram[0])
+    # Create a dataset and a dataloader
+    root_dir = "audio_data"
+    dataset = data.AudioDataset(SAMPLE_LOCATION, transform=spectrogram_transform)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=32, shuffle=True)
+    print(dataset[1])
+    print("done")
 
 
 def get_all_samples(path):

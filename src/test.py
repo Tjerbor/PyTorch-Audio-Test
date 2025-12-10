@@ -3,6 +3,6 @@ import matplotlib.pyplot as plt
 
 
 if __name__ == "__main__":
-    a = np.arange(12)
-    plt.plot(a)
-    plt.show()
+    import os, sys
+
+    print(os.path.dirname(sys.executable))
