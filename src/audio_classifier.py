@@ -105,6 +105,13 @@ def main():
         epochs=10,
     )
 
+    test(
+        test_dataloader=torch.utils.data.DataLoader(
+            test_dataset, batch_size=10, shuffle=True
+        ),
+        model=model,
+    )
+
     # 5: Modell Speichern
     # 6: Modell Laden
     # 7: Modell für Vorhersagen verwenden
@@ -266,23 +273,35 @@ def train(dataloader, optimizer, model, criterion, epochs):
         print(f"Epoch {epoch + 1}, Loss: {running_loss / len(dataloader)}")
 
 
-def test(model, epoch, test_loader, device):
-    model.eval()
+# def test(model, epoch, test_loader, device):
+#     model.eval()
+#     correct = 0
+#     for data, target in test_loader:
+#         data = data.to(device)
+#         target = target.to(device)
+#         output = model(data)
+#         output = output.permute(1, 0, 2)
+#         pred = output.max(2)[1]  # get the index of the max log-probability
+#         correct += pred.eq(target).cpu().sum().item()
+#     print(
+#         "\nTest set: Accuracy: {}/{} ({:.0f}%)\n".format(
+#             correct,
+#             len(test_loader.dataset),
+#             100.0 * correct / len(test_loader.dataset),
+#         )
+#     )
+
+
+def test(test_dataloader, model):
     correct = 0
-    for data, target in test_loader:
-        data = data.to(device)
-        target = target.to(device)
-        output = model(data)
-        output = output.permute(1, 0, 2)
-        pred = output.max(2)[1]  # get the index of the max log-probability
-        correct += pred.eq(target).cpu().sum().item()
-    print(
-        "\nTest set: Accuracy: {}/{} ({:.0f}%)\n".format(
-            correct,
-            len(test_loader.dataset),
-            100.0 * correct / len(test_loader.dataset),
-        )
-    )
+    total = 0
+    with torch.no_grad():
+        for inputs, labels in test_dataloader:
+            outputs = model(inputs)
+            _, predicted = torch.max(outputs.data, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+    print(f"Accuracy: {100 * correct / total}%")
 
 
 if __name__ == "__main__":
