@@ -24,16 +24,16 @@ TARGET_SAMPLE_LENGTH = int(TARGET_SAMPLERATE * TARGET_SAMPLE_LENGTH_IN_SECONDS)
 
 
 def main():
-    audio_file = f"{SAMPLE_LOCATION}\\Claps\\ECLIPSE CLAP 01.wav"
-    waveform, sample_rate = torchaudio.load(audio_file)
+    # audio_file = f"{SAMPLE_LOCATION}\\Claps\\ECLIPSE CLAP 01.wav"
+    # waveform, sample_rate = torchaudio.load(audio_file)
 
-    spectrogram_transform = T.Spectrogram()
+    # spectrogram_transform = T.Spectrogram(n_fft=2048)
 
-    # Apply the transform to the waveform
-    spectrogram = spectrogram_transform(waveform)
+    # # Apply the transform to the waveform
+    # spectrogram = spectrogram_transform(waveform)
 
-    print(spectrogram.shape)
-    # print(32 * (spectrogram.shape[2] // 4) * (spectrogram.shape[3] // 4), 128)
+    # print(spectrogram.shape)
+    # # print(32 * (spectrogram.shape[2] // 4) * (spectrogram.shape[3] // 4), 128)
 
     # -1: Feststellen ob Umgebung CUDA supported
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -53,8 +53,7 @@ def main():
     )
 
     # Spectrogram sample um layer im Netz zu bestimmen
-    spectrogram_sample = train_dataset.__getitem__(0)[0]
-    # plot_spectrogram(train_dataset.__getitem__(0)[0][0])
+    spectrogram_sample = train_dataset[0][0]
 
     # 2: Model erstellen mit Architektur und Foward-Funktion
     model = AudioClassifier(
@@ -69,22 +68,42 @@ def main():
 
     # 4: Trainieren und Testen in Epochen
 
-    log_interval = 20
-    for epoch in range(1, 41):
-        if epoch == 31:
-            print("First round of training complete. Setting learn rate to 0.001.")
-        optimizer.step()
-        train(
-            model=model,
-            epoch=epoch,
-            optimizer=optimizer,
-            device=device,
-            train_loader=torch.utils.data.DataLoader(
-                train_dataset, batch_size=10, shuffle=True
-            ),
-            log_interval=log_interval,
-        )
-        # test(model, epoch)
+    # log_interval = 20
+    # for epoch in range(1, 41):
+    #     if epoch == 31:
+    #         print("First round of training complete. Setting learn rate to 0.001.")
+    #     optimizer.step()
+    #     # train(
+    #     #     model=model,
+    #     #     epoch=epoch,
+    #     #     optimizer=optimizer,
+    #     #     device=device,
+    #     #     # train_loader=torch.utils.data.DataLoader(
+    #     #     #     train_dataset, batch_size=10, shuffle=True
+    #     #     # ),
+    #     #     train_loader=torch.utils.data.DataLoader(
+    #     #         full_data_set, batch_size=10, shuffle=True
+    #     #     ),
+    #     #     log_interval=log_interval,
+    #     # )
+    #     train(
+    #         dataloader=torch.utils.data.DataLoader(
+    #             full_data_set, batch_size=10, shuffle=True
+    #         ),
+    #         optimizer=optimizer,
+    #         model=model,
+    #         criterion=criterion,
+    #     )
+
+    train(
+        dataloader=torch.utils.data.DataLoader(
+            full_data_set, batch_size=10, shuffle=True
+        ),
+        optimizer=optimizer,
+        model=model,
+        criterion=criterion,
+        epochs=10,
+    )
 
     # 5: Modell Speichern
     # 6: Modell Laden
@@ -118,15 +137,15 @@ def audio_processing(waveform: torch.Tensor, original_samplerate):
 
     mel_spec = T.MelSpectrogram(
         sample_rate=TARGET_SAMPLERATE,
-        normalized=True,
+        # normalized=True,
         # n_mels=256,
         f_min=20,
-        mel_scale="slaney",
+        # mel_scale="slaney",
     )
     # mel_spec = T.Spectrogram(normalized=True)
     processed = waveform
+    # returns [n_mels, time]
     processed = mel_spec(processed)
-    print(processed)
     return processed
 
 
@@ -157,6 +176,8 @@ class AudioDataset(Dataset):
         if self.transform:
             waveform = self.transform(waveform, sample_rate)
         label = self.labels[idx]
+        # return {"image": waveform, "label": label}
+        waveform = torch.stack([waveform])
         return waveform, label
 
     def get_labels(self):
@@ -186,57 +207,63 @@ class AudioClassifier(nn.Module):
         self.relu2 = nn.ReLU()
         self.pool2 = nn.MaxPool2d(kernel_size=2)
         self.fc1 = nn.Linear(
-            32 * (spectogram_example.shape[1] // 4),
+            32
+            * (spectogram_example.shape[1] // 4)
+            * (spectogram_example.shape[2] // 4),
             128,
         )
         self.relu3 = nn.ReLU()
         self.fc2 = nn.Linear(128, num_classes)
 
     def forward(self, x):
-        x = self.conv1(x)
-        x = F.relu(self.bn1(x))
-        x = self.pool1(x)
-        x = self.conv2(x)
-        x = F.relu(self.bn2(x))
-        x = self.pool2(x)
-        x = self.conv3(x)
-        x = F.relu(self.bn3(x))
-        x = self.pool3(x)
-        x = self.conv4(x)
-        x = F.relu(self.bn4(x))
-        x = self.pool4(x)
-        x = self.avgPool(x)
-        x = x.permute(0, 2, 1)  # change the 512x1 to 1x512
-        x = self.fc1(x)
-        return F.log_softmax(x, dim=2)
+        x = self.pool1(self.relu1(self.conv1(x)))
+        x = self.pool2(self.relu2(self.conv2(x)))
+        x = x.view(x.size(0), -1)
+        x = self.relu3(self.fc1(x))
+        x = self.fc2(x)
+        return x
 
 
-def train(model, epoch, optimizer, device, train_loader, log_interval):
-    model.train()
-    for batch_idx, (data, target) in enumerate(train_loader):
-        optimizer.zero_grad()
-        data = data.to(device)
-        target = target.to(device)
-        data = data.requires_grad_()  # set requires_grad to True for training
-        output = model(data)
-        output = output.permute(
-            1, 0, 2
-        )  # original output dimensions are batchSizex1x10
-        loss = F.nll_loss(
-            output[0], target
-        )  # the loss functions expects a batchSizex10 input
-        loss.backward()
-        optimizer.step()
-        if batch_idx % log_interval == 0:  # print training stats
-            print(
-                "Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}".format(
-                    epoch,
-                    batch_idx * len(data),
-                    len(train_loader.dataset),
-                    100.0 * batch_idx / len(train_loader),
-                    loss,
-                )
-            )
+# def train(model, epoch, optimizer, device, train_loader, log_interval):
+#     model.train()
+#     for batch_idx, (data, target) in enumerate(train_loader):
+#         optimizer.zero_grad()
+#         data = data.to(device)
+#         target = target.to(device)
+#         data = data.requires_grad_()  # set requires_grad to True for training
+#         output = model(data)
+#         output = output.permute(
+#             1, 0, 2
+#         )  # original output dimensions are batchSizex1x10
+#         loss = F.nll_loss(
+#             output[0], target
+#         )  # the loss functions expects a batchSizex10 input
+#         loss.backward()
+#         optimizer.step()
+#         if batch_idx % log_interval == 0:  # print training stats
+#             print(
+#                 "Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}".format(
+#                     epoch,
+#                     batch_idx * len(data),
+#                     len(train_loader.dataset),
+#                     100.0 * batch_idx / len(train_loader),
+#                     loss,
+#                 )
+#             )
+
+
+def train(dataloader, optimizer, model, criterion, epochs):
+    num_epochs = epochs
+    for epoch in range(num_epochs):
+        running_loss = 0.0
+        for i, (inputs, labels) in enumerate(dataloader):
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+        print(f"Epoch {epoch + 1}, Loss: {running_loss / len(dataloader)}")
 
 
 def test(model, epoch, test_loader, device):
