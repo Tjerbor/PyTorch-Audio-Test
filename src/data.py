@@ -10,6 +10,7 @@ class AudioDataset(Dataset):
         self.transform = transform
         self.file_list = []
         self.labels = []
+        self.mix = T.DownmixMono()
         for label in os.listdir(root_dir):
             label_dir = os.path.join(root_dir, label)
             for file in os.listdir(label_dir):

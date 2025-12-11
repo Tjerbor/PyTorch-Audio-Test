@@ -208,3 +208,5 @@ __marimo__/
 
 
 /Samples
+/Test Audio
+*.wav
