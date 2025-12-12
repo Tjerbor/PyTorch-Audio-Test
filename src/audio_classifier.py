@@ -1,8 +1,10 @@
 import glob
 import os
+import re
 import wave
 import numpy as np
-import data
+import datetime
+
 from pathlib import Path
 import scipy as sp
 import torchaudio
@@ -21,6 +23,7 @@ SAMPLE_LOCATION = f"{PROJECT_ROOT}\\Samples"
 TARGET_SAMPLERATE = 32000
 TARGET_SAMPLE_LENGTH_IN_SECONDS = 1
 TARGET_SAMPLE_LENGTH = int(TARGET_SAMPLERATE * TARGET_SAMPLE_LENGTH_IN_SECONDS)
+MODEL_SAVE_LOCATION = f"{PROJECT_ROOT}\\Models"
 
 
 def main():
@@ -64,7 +67,7 @@ def main():
 
     # 3: Loss-Funktion und Optimizer definieren/waehlen
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0001)
 
     # 4: Trainieren und Testen in Epochen
 
@@ -113,7 +116,16 @@ def main():
     )
 
     # 5: Modell Speichern
+
+    save_model(
+        file_path=f"{MODEL_SAVE_LOCATION}\\model_{get_current_timestamp_formatted()}.pth",
+        model=model,
+    )
+
     # 6: Modell Laden
+
+    loaded_model = load_most_recent_model(MODEL_SAVE_LOCATION)
+
     # 7: Modell für Vorhersagen verwenden
     exit(0)
 
@@ -213,12 +225,14 @@ class AudioClassifier(nn.Module):
         self.conv2 = nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1)
         self.relu2 = nn.ReLU()
         self.pool2 = nn.MaxPool2d(kernel_size=2)
+
         self.fc1 = nn.Linear(
             32
             * (spectogram_example.shape[1] // 4)
             * (spectogram_example.shape[2] // 4),
             128,
         )
+
         self.relu3 = nn.ReLU()
         self.fc2 = nn.Linear(128, num_classes)
 
@@ -295,13 +309,50 @@ def train(dataloader, optimizer, model, criterion, epochs):
 def test(test_dataloader, model):
     correct = 0
     total = 0
+    model.eval()
     with torch.no_grad():
         for inputs, labels in test_dataloader:
             outputs = model(inputs)
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
-    print(f"Accuracy: {100 * correct / total}%")
+            print(f"input labels: {labels}")
+            print(f"predicted labels: {predicted}")
+
+    print(f"Accuracy: {100.0 * float(correct) / float(total)}%")
+
+
+def save_model(file_path, model):
+    # Check if save folder exist
+    # If not, create folder
+    Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+
+    torch.save(
+        # Not right way as model's size is dynamic from the spectrogram shape
+        # model.state_dict(),
+        #
+        model,
+        file_path,
+    )
+
+
+def load_model(file_path):
+    model = torch.load(file_path, weights_only=False)
+    return model
+
+
+def load_most_recent_model(folder_path):
+    models = sorted(glob.glob(f"{folder_path}\\*.pth"))
+    if len(models) == 0:
+        print(f"No models found in {folder_path}")
+        exit(1)
+    model_path = models[len(models) - 1]
+    print(f"Loading model: {model_path}")
+    return load_model(model_path)
+
+
+def get_current_timestamp_formatted() -> str:
+    return datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 
 if __name__ == "__main__":
