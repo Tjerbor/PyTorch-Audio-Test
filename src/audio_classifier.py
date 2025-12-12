@@ -43,8 +43,8 @@ def main():
     for key, value in full_data_set.get_labels_dict().items():
         print(f"{key} : {value}")
 
-    train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(
-        full_data_set, [0.8, 0.1, 0.1]
+    train_dataset, test_dataset = torch.utils.data.random_split(
+        full_data_set, [0.9, 0.1]
     )
 
     # Spectrogram sample um layer im Netz zu bestimmen
@@ -97,7 +97,6 @@ def main():
     eval_dataset = AudioDataset(
         root_dir=EVAL_LOCATION, transform=audio_processing, label_mode=False
     )
-    print(eval_dataset.get_file_paths())
 
     validate(
         validate_dataset=eval_dataset,
@@ -167,7 +166,7 @@ class AudioDataset(Dataset):
                     self.file_list.append(file_path)
                     self.labels.append(self.labels_dict[label])
         else:
-            self.file_list = glob.glob(f"{root_dir}\\*.wav")
+            self.file_list = glob.glob(f"{root_dir}\\**\\*.wav", recursive=True)
 
     def __len__(self):
         return len(self.file_list)
@@ -315,5 +314,21 @@ def get_current_timestamp_formatted() -> str:
     return datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 
+def vorschau_eval():
+    loaded_model, classes_dict = load_most_recent_model(MODEL_SAVE_LOCATION)
+
+    eval_dataset = AudioDataset(
+        root_dir=EVAL_LOCATION, transform=audio_processing, label_mode=False
+    )
+
+    validate(
+        validate_dataset=eval_dataset,
+        model=loaded_model,
+        class_dict=classes_dict,
+    )
+
+
 if __name__ == "__main__":
     main()
+
+    # vorschau_eval()
