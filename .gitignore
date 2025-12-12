@@ -210,5 +210,6 @@ __marimo__/
 /Samples
 /Test Audio
 /Models
+/Eval
 *.pth
 *.wav

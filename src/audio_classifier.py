@@ -1,4 +1,5 @@
 import glob
+import json
 import os
 import re
 import wave
@@ -23,20 +24,11 @@ SAMPLE_LOCATION = f"{PROJECT_ROOT}\\Samples"
 TARGET_SAMPLERATE = 32000
 TARGET_SAMPLE_LENGTH_IN_SECONDS = 1
 TARGET_SAMPLE_LENGTH = int(TARGET_SAMPLERATE * TARGET_SAMPLE_LENGTH_IN_SECONDS)
+EVAL_LOCATION = f"{PROJECT_ROOT}\\Eval"
 MODEL_SAVE_LOCATION = f"{PROJECT_ROOT}\\Models"
 
 
 def main():
-    # audio_file = f"{SAMPLE_LOCATION}\\Claps\\ECLIPSE CLAP 01.wav"
-    # waveform, sample_rate = torchaudio.load(audio_file)
-
-    # spectrogram_transform = T.Spectrogram(n_fft=2048)
-
-    # # Apply the transform to the waveform
-    # spectrogram = spectrogram_transform(waveform)
-
-    # print(spectrogram.shape)
-    # # print(32 * (spectrogram.shape[2] // 4) * (spectrogram.shape[3] // 4), 128)
 
     # -1: Feststellen ob Umgebung CUDA supported
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -47,8 +39,8 @@ def main():
 
     # 1: Dataset Wrapper
     full_data_set = AudioDataset(SAMPLE_LOCATION, transform=audio_processing)
-    num_classes = len(full_data_set.get_labels())
-    for key, value in full_data_set.get_labels().items():
+    num_classes = len(full_data_set.get_labels_dict())
+    for key, value in full_data_set.get_labels_dict().items():
         print(f"{key} : {value}")
 
     train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(
@@ -71,33 +63,6 @@ def main():
 
     # 4: Trainieren und Testen in Epochen
 
-    # log_interval = 20
-    # for epoch in range(1, 41):
-    #     if epoch == 31:
-    #         print("First round of training complete. Setting learn rate to 0.001.")
-    #     optimizer.step()
-    #     # train(
-    #     #     model=model,
-    #     #     epoch=epoch,
-    #     #     optimizer=optimizer,
-    #     #     device=device,
-    #     #     # train_loader=torch.utils.data.DataLoader(
-    #     #     #     train_dataset, batch_size=10, shuffle=True
-    #     #     # ),
-    #     #     train_loader=torch.utils.data.DataLoader(
-    #     #         full_data_set, batch_size=10, shuffle=True
-    #     #     ),
-    #     #     log_interval=log_interval,
-    #     # )
-    #     train(
-    #         dataloader=torch.utils.data.DataLoader(
-    #             full_data_set, batch_size=10, shuffle=True
-    #         ),
-    #         optimizer=optimizer,
-    #         model=model,
-    #         criterion=criterion,
-    #     )
-
     train(
         dataloader=torch.utils.data.DataLoader(
             full_data_set, batch_size=10, shuffle=True
@@ -118,15 +83,28 @@ def main():
     # 5: Modell Speichern
 
     save_model(
-        file_path=f"{MODEL_SAVE_LOCATION}\\model_{get_current_timestamp_formatted()}.pth",
+        file_path=f"{MODEL_SAVE_LOCATION}\\model_{get_current_timestamp_formatted()}",
         model=model,
+        classes_dict=full_data_set.get_labels_dict(),
     )
 
     # 6: Modell Laden
 
-    loaded_model = load_most_recent_model(MODEL_SAVE_LOCATION)
+    loaded_model, classes_dict = load_most_recent_model(MODEL_SAVE_LOCATION)
 
     # 7: Modell für Vorhersagen verwenden
+
+    eval_dataset = AudioDataset(
+        root_dir=EVAL_LOCATION, transform=audio_processing, label_mode=False
+    )
+    print(eval_dataset.get_file_paths())
+
+    validate(
+        validate_dataset=eval_dataset,
+        model=loaded_model,
+        class_dict=classes_dict,
+    )
+
     exit(0)
 
 
@@ -135,7 +113,8 @@ def read_data(path):
     return samples
 
 
-def audio_processing(waveform: torch.Tensor, original_samplerate):
+def audio_processing(file_path):
+    waveform, original_samplerate = torchaudio.load(file_path)
     # Downmix to Mono
     waveform = torch.mean(waveform, axis=0)
 
@@ -165,42 +144,47 @@ def audio_processing(waveform: torch.Tensor, original_samplerate):
     processed = waveform
     # returns [n_mels, time]
     processed = mel_spec(processed)
+    processed = torch.stack([processed])
     return processed
 
 
 class AudioDataset(Dataset):
-    def __init__(self, root_dir, transform=None):
+    def __init__(self, root_dir, transform=None, label_mode=True):
         self.root_dir = root_dir
         self.transform = transform
+        self.label_mode = label_mode
         self.file_list = []
         self.labels = []
         self.labels_dict = {}
-        for label in os.listdir(root_dir):
-            label_dir = os.path.join(root_dir, label)
-            # Dataloader can't work with strings
-            # so each label receives an integer as ID
-            self.labels_dict[label] = len(self.labels_dict)
-            for file in os.listdir(label_dir):
-                file_path = os.path.join(label_dir, file)
-                self.file_list.append(file_path)
-                self.labels.append(self.labels_dict[label])
+        if label_mode:
+            for label in os.listdir(root_dir):
+                label_dir = os.path.join(root_dir, label)
+                # Dataloader can't work with strings
+                # so each label receives an integer as ID
+                self.labels_dict[label] = len(self.labels_dict)
+                for file in os.listdir(label_dir):
+                    file_path = os.path.join(label_dir, file)
+                    self.file_list.append(file_path)
+                    self.labels.append(self.labels_dict[label])
+        else:
+            self.file_list = glob.glob(f"{root_dir}\\*.wav")
 
     def __len__(self):
         return len(self.file_list)
 
     def __getitem__(self, idx):
         file_path = self.file_list[idx]
-        waveform, sample_rate = torchaudio.load(file_path)
-        # waveform, sample_rate = librosa.load(file_path)
-        if self.transform:
-            waveform = self.transform(waveform, sample_rate)
-        label = self.labels[idx]
+        label = self.labels[idx] if self.label_mode else -1
         # return {"image": waveform, "label": label}
-        waveform = torch.stack([waveform])
-        return waveform, label
 
-    def get_labels(self):
+        processed_audio = self.transform(file_path)
+        return processed_audio, label
+
+    def get_labels_dict(self):
         return self.labels_dict
+
+    def get_file_paths(self):
+        return self.file_list
 
 
 def plot_spectrogram(specgram, title=None, ylabel="freq_bin", ax=None):
@@ -245,34 +229,6 @@ class AudioClassifier(nn.Module):
         return x
 
 
-# def train(model, epoch, optimizer, device, train_loader, log_interval):
-#     model.train()
-#     for batch_idx, (data, target) in enumerate(train_loader):
-#         optimizer.zero_grad()
-#         data = data.to(device)
-#         target = target.to(device)
-#         data = data.requires_grad_()  # set requires_grad to True for training
-#         output = model(data)
-#         output = output.permute(
-#             1, 0, 2
-#         )  # original output dimensions are batchSizex1x10
-#         loss = F.nll_loss(
-#             output[0], target
-#         )  # the loss functions expects a batchSizex10 input
-#         loss.backward()
-#         optimizer.step()
-#         if batch_idx % log_interval == 0:  # print training stats
-#             print(
-#                 "Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}".format(
-#                     epoch,
-#                     batch_idx * len(data),
-#                     len(train_loader.dataset),
-#                     100.0 * batch_idx / len(train_loader),
-#                     loss,
-#                 )
-#             )
-
-
 def train(dataloader, optimizer, model, criterion, epochs):
     num_epochs = epochs
     for epoch in range(num_epochs):
@@ -284,26 +240,9 @@ def train(dataloader, optimizer, model, criterion, epochs):
             loss.backward()
             optimizer.step()
             running_loss += loss.item()
-        print(f"Epoch {epoch + 1}, Loss: {running_loss / len(dataloader)}")
-
-
-# def test(model, epoch, test_loader, device):
-#     model.eval()
-#     correct = 0
-#     for data, target in test_loader:
-#         data = data.to(device)
-#         target = target.to(device)
-#         output = model(data)
-#         output = output.permute(1, 0, 2)
-#         pred = output.max(2)[1]  # get the index of the max log-probability
-#         correct += pred.eq(target).cpu().sum().item()
-#     print(
-#         "\nTest set: Accuracy: {}/{} ({:.0f}%)\n".format(
-#             correct,
-#             len(test_loader.dataset),
-#             100.0 * correct / len(test_loader.dataset),
-#         )
-#     )
+        print(
+            f"Epoch {epoch + 1} of {num_epochs}, Loss: {running_loss / len(dataloader)}"
+        )
 
 
 def test(test_dataloader, model):
@@ -322,7 +261,21 @@ def test(test_dataloader, model):
     print(f"Accuracy: {100.0 * float(correct) / float(total)}%")
 
 
-def save_model(file_path, model):
+def validate(validate_dataset: AudioDataset, model, class_dict: dict):
+    validate_dataloader = torch.utils.data.DataLoader(validate_dataset, batch_size=1)
+    class_dict_keys = list(class_dict.keys())
+    model.eval()
+    with torch.no_grad():
+        for idx, (inputs, targets) in enumerate(validate_dataloader):
+            # inputs, targets = inputs.to(device), targets.to(device)
+            outputs = model(inputs)
+            _, predicted = torch.max(outputs.data, 1)
+            print(
+                f"{idx}: For {validate_dataset.file_list[idx]} class {class_dict_keys[predicted]} was predicted."
+            )
+
+
+def save_model(file_path, model, classes_dict):
     # Check if save folder exist
     # If not, create folder
     Path(file_path).parent.mkdir(parents=True, exist_ok=True)
@@ -332,13 +285,20 @@ def save_model(file_path, model):
         # model.state_dict(),
         #
         model,
-        file_path,
+        f"{file_path}.pth",
     )
+
+    with open(f"{file_path}.json", "w", encoding="utf-8") as dict_file:
+        json.dump(classes_dict, dict_file)
 
 
 def load_model(file_path):
     model = torch.load(file_path, weights_only=False)
-    return model
+    with open(
+        f"{str(file_path).removesuffix('.pth')}.json", "r", encoding="utf-8"
+    ) as dict_file:
+        classes_dict = json.load(dict_file)
+    return model, classes_dict
 
 
 def load_most_recent_model(folder_path):
