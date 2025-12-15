@@ -1,7 +1,9 @@
 import glob
 import json
 import os
+from random import choice, randint, random
 import re
+from tracemalloc import start
 import wave
 import numpy as np
 import datetime
@@ -16,7 +18,7 @@ import matplotlib.pyplot as plt
 from torch.utils.data import Dataset
 import torch.nn as nn
 import torch.optim as optim
-from torch import tensor
+from torch import Tensor, tensor
 
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -24,11 +26,15 @@ SAMPLE_LOCATION = f"{PROJECT_ROOT}\\Samples"
 TARGET_SAMPLERATE = 32000
 TARGET_SAMPLE_LENGTH_IN_SECONDS = 1
 TARGET_SAMPLE_LENGTH = int(TARGET_SAMPLERATE * TARGET_SAMPLE_LENGTH_IN_SECONDS)
+NOISE_LOCATION = f"{PROJECT_ROOT}\\Noise"
+NOISE_PATHS = []
 EVAL_LOCATION = f"{PROJECT_ROOT}\\Eval"
 MODEL_SAVE_LOCATION = f"{PROJECT_ROOT}\\Models"
 
 
 def main():
+    global NOISE_PATHS
+    NOISE_PATHS = glob.glob(f"{NOISE_LOCATION}\\**\\*.wav", recursive=True)
 
     # -1: Feststellen ob Umgebung CUDA supported
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -50,6 +56,8 @@ def main():
     # Spectrogram sample um layer im Netz zu bestimmen
     spectrogram_sample = train_dataset[0][0]
 
+    input("The")
+
     # 2: Model erstellen mit Architektur und Foward-Funktion
     model = AudioClassifier(
         num_classes=num_classes, spectogram_example=spectrogram_sample
@@ -63,6 +71,8 @@ def main():
 
     # 4: Trainieren und Testen in Epochen
 
+    full_data_set.set_augmentation_mode(True)
+
     train(
         dataloader=torch.utils.data.DataLoader(
             train_dataset, batch_size=10, shuffle=True
@@ -72,6 +82,8 @@ def main():
         criterion=criterion,
         epochs=10,
     )
+
+    full_data_set.set_augmentation_mode(False)
 
     test(
         test_dataloader=torch.utils.data.DataLoader(
@@ -112,8 +124,9 @@ def read_data(path):
     return samples
 
 
-def audio_processing(file_path):
+def audio_processing(file_path, apply_augmentation: bool = False):
     waveform, original_samplerate = torchaudio.load(file_path)
+
     # Downmix to Mono
     waveform = torch.mean(waveform, axis=0)
 
@@ -132,6 +145,10 @@ def audio_processing(file_path):
         padded[: waveform.shape[0]] = waveform
         waveform = padded
 
+    if apply_augmentation:
+        # Augmentation
+        waveform = audio_augmentation(waveform, TARGET_SAMPLERATE)
+
     mel_spec = T.MelSpectrogram(
         sample_rate=TARGET_SAMPLERATE,
         # normalized=True,
@@ -147,7 +164,60 @@ def audio_processing(file_path):
     return processed
 
 
+def audio_augmentation(waveform: Tensor, sample_rate: int):
+    global NOISE_PATHS
+    # choose random Noise sample
+    noise_path = NOISE_PATHS[randint(0, len(NOISE_PATHS) - 1)]
+    noise, noise_samplerate = torchaudio.load(noise_path)
+
+    # downmix noise to mono
+    noise = torch.mean(noise, axis=0)
+
+    # Resample
+    if noise_samplerate != sample_rate:
+        resample = T.Resample(noise_samplerate, sample_rate)
+        waveform = resample(waveform)
+
+    noise_length = noise.shape[0]
+    waveform_length = waveform.shape[0]
+    window = noise_length - waveform_length
+    print(f"window {window}")
+    if window > 0:
+        noise_start = randint(0, window - 1)
+        noise = noise[noise_start : noise_start + waveform_length]
+    elif window < 0:
+        padded_noise = torch.zeros(waveform.shape)
+        padded_noise[: noise.shape[0]] = noise
+        noise = padded_noise
+
+    # Signal to noise ratios
+    # https://en.wikipedia.org/wiki/Signal-to-noise_ratio
+    # snr_dbs = torch.tensor([20, 10, 3])
+    snr_db = torch.tensor([choice([20, 10, 3])])
+    noised_up = F.add_noise(
+        waveform=torch.stack([waveform]), noise=torch.stack([noise]), snr=snr_db
+    )
+    augmented = noised_up[0]
+    print(noised_up.shape)
+    specto = T.MelSpectrogram()
+    # plot_spectrogram(specto(waveform))
+    # plot_spectrogram(specto(noised_up[0]))
+    # plot_spectrogram(specto(noised_up[1]))
+    # plot_spectrogram(specto(noised_up[2]))
+    torchaudio.save(f"noised_{snr_db[0]}dB.wav", noised_up[0], 44100)
+    # torchaudio.save("20db.wav", noised_up[0], 44100)
+    # torchaudio.save("10db.wav", noised_up[1], 44100)
+    # torchaudio.save("3db.wav", noised_up[2], 44100)
+
+    # timestrech_transform = T.TimeStretch(fixed_rate=np.random.uniform(0.5, 2.0))
+
+    # timestrech_transform = timestrech_transform(waveform)
+    return augmented
+
+
 class AudioDataset(Dataset):
+    augmentation_mode = False
+
     def __init__(self, root_dir, transform=None, label_mode=True):
         self.root_dir = root_dir
         self.transform = transform
@@ -173,10 +243,11 @@ class AudioDataset(Dataset):
 
     def __getitem__(self, idx):
         file_path = self.file_list[idx]
+        print(file_path)
         label = self.labels[idx] if self.label_mode else -1
         # return {"image": waveform, "label": label}
 
-        processed_audio = self.transform(file_path)
+        processed_audio = self.transform(file_path, AudioDataset.augmentation_mode)
         return processed_audio, label
 
     def get_labels_dict(self):
@@ -184,6 +255,12 @@ class AudioDataset(Dataset):
 
     def get_file_paths(self):
         return self.file_list
+
+    def set_augmentation_mode(self, bool: bool):
+        AudioDataset.augmentation_mode = bool
+
+    def get_Augmentation_mode(self) -> bool:
+        return AudioDataset.augmentation_mode
 
 
 def plot_spectrogram(specgram, title=None, ylabel="freq_bin", ax=None):

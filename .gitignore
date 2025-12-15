@@ -211,5 +211,6 @@ __marimo__/
 /Test Audio
 /Models
 /Eval
+/Noise
 *.pth
 *.wav
