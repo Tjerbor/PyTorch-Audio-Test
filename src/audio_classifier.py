@@ -65,7 +65,7 @@ def main():
 
     train(
         dataloader=torch.utils.data.DataLoader(
-            full_data_set, batch_size=10, shuffle=True
+            train_dataset, batch_size=10, shuffle=True
         ),
         optimizer=optimizer,
         model=model,
