@@ -56,8 +56,6 @@ def main():
     # Spectrogram sample um layer im Netz zu bestimmen
     spectrogram_sample = train_dataset[0][0]
 
-    input("The")
-
     # 2: Model erstellen mit Architektur und Foward-Funktion
     model = AudioClassifier(
         num_classes=num_classes, spectogram_example=spectrogram_sample
@@ -71,6 +69,7 @@ def main():
 
     # 4: Trainieren und Testen in Epochen
 
+    # Beim abrufen einer Audio wird Datenaugmentation vollzogen
     full_data_set.set_augmentation_mode(True)
 
     train(
@@ -83,6 +82,7 @@ def main():
         epochs=10,
     )
 
+    # Fürs testen wird die Augmentation ausgeschaltet
     full_data_set.set_augmentation_mode(False)
 
     test(
@@ -148,6 +148,7 @@ def audio_processing(file_path, apply_augmentation: bool = False):
     if apply_augmentation:
         # Augmentation
         waveform = audio_augmentation(waveform, TARGET_SAMPLERATE)
+        pass
 
     mel_spec = T.MelSpectrogram(
         sample_rate=TARGET_SAMPLERATE,
@@ -176,12 +177,11 @@ def audio_augmentation(waveform: Tensor, sample_rate: int):
     # Resample
     if noise_samplerate != sample_rate:
         resample = T.Resample(noise_samplerate, sample_rate)
-        waveform = resample(waveform)
+        noise = resample(noise)
 
     noise_length = noise.shape[0]
     waveform_length = waveform.shape[0]
     window = noise_length - waveform_length
-    print(f"window {window}")
     if window > 0:
         noise_start = randint(0, window - 1)
         noise = noise[noise_start : noise_start + waveform_length]
@@ -198,13 +198,12 @@ def audio_augmentation(waveform: Tensor, sample_rate: int):
         waveform=torch.stack([waveform]), noise=torch.stack([noise]), snr=snr_db
     )
     augmented = noised_up[0]
-    print(noised_up.shape)
-    specto = T.MelSpectrogram()
-    # plot_spectrogram(specto(waveform))
+    # specto = T.MelSpectrogram()
+    # plot_spectrogram(specto(augmented))
     # plot_spectrogram(specto(noised_up[0]))
     # plot_spectrogram(specto(noised_up[1]))
     # plot_spectrogram(specto(noised_up[2]))
-    torchaudio.save(f"noised_{snr_db[0]}dB.wav", noised_up[0], 44100)
+    # torchaudio.save(f"noised_{snr_db[0]}dB.wav", noised_up[0], 44100)
     # torchaudio.save("20db.wav", noised_up[0], 44100)
     # torchaudio.save("10db.wav", noised_up[1], 44100)
     # torchaudio.save("3db.wav", noised_up[2], 44100)
@@ -243,7 +242,6 @@ class AudioDataset(Dataset):
 
     def __getitem__(self, idx):
         file_path = self.file_list[idx]
-        print(file_path)
         label = self.labels[idx] if self.label_mode else -1
         # return {"image": waveform, "label": label}
 
@@ -338,6 +336,7 @@ def test(test_dataloader, model):
 
 
 def validate(validate_dataset: AudioDataset, model, class_dict: dict):
+    AudioDataset.augmentation_mode = False
     validate_dataloader = torch.utils.data.DataLoader(validate_dataset, batch_size=1)
     class_dict_keys = list(class_dict.keys())
     model.eval()

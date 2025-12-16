@@ -1,1 +1,1 @@
-conda activate audio_test_15
+conda activate h:\Projects\PyTorch-Audio-Test\.conda
