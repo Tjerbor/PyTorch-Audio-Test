@@ -1,5 +1,6 @@
 import glob
 import json
+from math import isnan
 import os
 from random import choice, randint, random
 import re
@@ -110,6 +111,8 @@ def main():
         root_dir=EVAL_LOCATION, transform=audio_processing, label_mode=False
     )
 
+    input("here:")
+
     validate(
         validate_dataset=eval_dataset,
         model=loaded_model,
@@ -203,7 +206,7 @@ def audio_augmentation(waveform: Tensor, sample_rate: int):
     # plot_spectrogram(specto(noised_up[0]))
     # plot_spectrogram(specto(noised_up[1]))
     # plot_spectrogram(specto(noised_up[2]))
-    # torchaudio.save(f"noised_{snr_db[0]}dB.wav", noised_up[0], 44100)
+    # torchaudio.save(f"{noise_path}_{snr_db[0]}dB.wav", noised_up[0], 44100)
     # torchaudio.save("20db.wav", noised_up[0], 44100)
     # torchaudio.save("10db.wav", noised_up[1], 44100)
     # torchaudio.save("3db.wav", noised_up[2], 44100)
@@ -211,7 +214,15 @@ def audio_augmentation(waveform: Tensor, sample_rate: int):
     # timestrech_transform = T.TimeStretch(fixed_rate=np.random.uniform(0.5, 2.0))
 
     # timestrech_transform = timestrech_transform(waveform)
+    augmented = remove_NaN(augmented)
     return augmented
+
+
+def remove_NaN(t: tensor, replacement=0.0):
+    if torch.isnan(t).any():
+        print("NaN found")
+        t[torch.isnan(t)] = replacement
+    return t
 
 
 class AudioDataset(Dataset):
