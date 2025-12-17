@@ -229,23 +229,28 @@ def add_noise(waveform: Tensor, sample_rate: int, snr_dbs=[20, 10, 3]):
 
 
 def time_stretch(waveform: Tensor, sample_rate: int, make_same_length_as_input=True):
-    speed = torchaudio.transforms.Speed(
-        orig_freq=sample_rate,
-        factor=np.random.uniform(0.5, 2.0),
+    asdf = torch.stack([waveform])
+    # asdf = waveform
+    spec = T.Spectrogram(n_fft=2048)
+    stretcher = T.TimeStretch(n_freq=1025)
+
+    factor = np.random.uniform(0.5, 2.0)
+    specter = spec(asdf)
+    stretched = stretcher(specter, factor)
+    print(
+        f"expected length for {specter[0].shape[1]} with factor {factor} is {specter[0].shape[1]/factor}"
     )
 
-    stretched = speed(waveform, lengths=Tensor([waveform.shape[0]]))
-    print(f"before stretch {waveform.shape}")
-    print(f"speed {speed.factor}")
-    print(f"expected length {waveform.shape[0]/speed.factor}")
-    print(f"new length {stretched[0].shape}")
-    print(stretched[1].shape)
-    print(stretched[0])
-    torchaudio.save(
-        f"{PROJECT_ROOT}\\stretched.wav", stretched[0], sample_rate=sample_rate
-    )
-    input("real::")
-    return stretched
+    # print(specter.dtype)
+    # print(stretched.dtype)
+
+    # Spectogram with no power returns complex64 dtype for float32 input with phase
+    no_phase = stretched.type(torch.float32)
+
+    plot_spectrogram(specter[0])
+    plot_spectrogram(no_phase[0])
+
+    return stretched[0]
 
 
 def remove_NaN(t: tensor, replacement=0.0):
@@ -313,7 +318,14 @@ def plot_spectrogram(specgram, title=None, ylabel="freq_bin", ax=None):
     ax.set_ylabel(ylabel)
     power_to_db = T.AmplitudeToDB("power", 80.0)
     ax.imshow(
-        power_to_db(specgram), origin="lower", aspect="auto", interpolation="nearest"
+        power_to_db(specgram),
+        origin="lower",
+        aspect="auto",
+        interpolation="nearest",
+        # specgram,
+        # origin="lower",
+        # aspect="auto",
+        # interpolation="nearest",
     )
     plt.show()
 
