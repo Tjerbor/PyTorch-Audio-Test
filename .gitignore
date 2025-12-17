@@ -212,6 +212,7 @@ __marimo__/
 /Models
 /Eval
 /Noise
+/Impulse Responses
 
 *.pth
 *.wav

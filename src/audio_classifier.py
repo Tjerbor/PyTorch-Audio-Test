@@ -29,13 +29,17 @@ TARGET_SAMPLE_LENGTH_IN_SECONDS = 1
 TARGET_SAMPLE_LENGTH = int(TARGET_SAMPLERATE * TARGET_SAMPLE_LENGTH_IN_SECONDS)
 NOISE_LOCATION = f"{PROJECT_ROOT}\\Noise"
 NOISE_PATHS = []
+IMPULSE_RESPONSE_LOCATION = f"{PROJECT_ROOT}\\Impulse Responses"
+IR_PATHS = []
 EVAL_LOCATION = f"{PROJECT_ROOT}\\Eval"
 MODEL_SAVE_LOCATION = f"{PROJECT_ROOT}\\Models"
 
 
 def main():
     global NOISE_PATHS
+    global IR_PATHS
     NOISE_PATHS = glob.glob(f"{NOISE_LOCATION}\\**\\*.wav", recursive=True)
+    IR_PATHS = glob.glob(f"{IMPULSE_RESPONSE_LOCATION}\\**\\*.wav", recursive=True)
 
     # -1: Feststellen ob Umgebung CUDA supported
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -170,12 +174,8 @@ def audio_processing(file_path, apply_augmentation: bool = False):
 
 def audio_augmentation(waveform: Tensor, sample_rate: int):
     augmented = waveform
-    # augmented = add_noise(waveform=augmented, sample_rate=sample_rate)
-    augmented = time_stretch(waveform=augmented, sample_rate=sample_rate)
-
-    # timestrech_transform = T.TimeStretch(fixed_rate=np.random.uniform(0.5, 2.0))
-
-    # timestrech_transform = timestrech_transform(waveform)
+    augmented = add_noise(waveform=augmented, sample_rate=sample_rate)
+    augmented = convolve_reverb(waveform=augmented, sample_rate=sample_rate)
 
     return augmented
 
@@ -183,7 +183,7 @@ def audio_augmentation(waveform: Tensor, sample_rate: int):
 def add_noise(waveform: Tensor, sample_rate: int, snr_dbs=[20, 10, 3]):
     global NOISE_PATHS
     # choose random Noise sample
-    noise_path = NOISE_PATHS[randint(0, len(NOISE_PATHS) - 1)]
+    noise_path = choice(NOISE_PATHS)
     noise, noise_samplerate = torchaudio.load(noise_path)
 
     # downmix noise to mono
@@ -228,29 +228,22 @@ def add_noise(waveform: Tensor, sample_rate: int, snr_dbs=[20, 10, 3]):
     return augmented
 
 
-def time_stretch(waveform: Tensor, sample_rate: int, make_same_length_as_input=True):
-    asdf = torch.stack([waveform])
-    # asdf = waveform
-    spec = T.Spectrogram(n_fft=2048)
-    stretcher = T.TimeStretch(n_freq=1025)
+def convolve_reverb(waveform: Tensor, sample_rate: int):
+    global IR_PATHS
+    # choose random Impulse Response sample
+    IR_path = choice(IR_PATHS)
+    impulse_response, IR_samplerate = torchaudio.load(IR_path)
 
-    factor = np.random.uniform(0.5, 2.0)
-    specter = spec(asdf)
-    stretched = stretcher(specter, factor)
-    print(
-        f"expected length for {specter[0].shape[1]} with factor {factor} is {specter[0].shape[1]/factor}"
-    )
+    # ”same”: Returns the center segment of the full convolution result, with shape (…, N).
+    # https://docs.pytorch.org/audio/main/generated/torchaudio.functional.fftconvolve.html
+    convolved = F.fftconvolve(waveform, impulse_response[0], mode="same")
 
-    # print(specter.dtype)
-    # print(stretched.dtype)
+    # torchaudio.save(
+    #     f"{PROJECT_ROOT}\\{Path(IR_path).name}.wav", convolved, sample_rate=sample_rate
+    # )
+    # input("askdljhf")
 
-    # Spectogram with no power returns complex64 dtype for float32 input with phase
-    no_phase = stretched.type(torch.float32)
-
-    plot_spectrogram(specter[0])
-    plot_spectrogram(no_phase[0])
-
-    return stretched[0]
+    return convolved
 
 
 def remove_NaN(t: tensor, replacement=0.0):
@@ -290,8 +283,8 @@ class AudioDataset(Dataset):
         file_path = self.file_list[idx]
         label = self.labels[idx] if self.label_mode else -1
 
-        if self.augmentation_mode:
-            print(file_path)
+        # if self.augmentation_mode:
+        #     print(file_path)
         # return {"image": waveform, "label": label}
 
         processed_audio = self.transform(file_path, AudioDataset.augmentation_mode)
