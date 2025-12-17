@@ -169,6 +169,18 @@ def audio_processing(file_path, apply_augmentation: bool = False):
 
 
 def audio_augmentation(waveform: Tensor, sample_rate: int):
+    augmented = waveform
+    # augmented = add_noise(waveform=augmented, sample_rate=sample_rate)
+    augmented = time_stretch(waveform=augmented, sample_rate=sample_rate)
+
+    # timestrech_transform = T.TimeStretch(fixed_rate=np.random.uniform(0.5, 2.0))
+
+    # timestrech_transform = timestrech_transform(waveform)
+
+    return augmented
+
+
+def add_noise(waveform: Tensor, sample_rate: int, snr_dbs=[20, 10, 3]):
     global NOISE_PATHS
     # choose random Noise sample
     noise_path = NOISE_PATHS[randint(0, len(NOISE_PATHS) - 1)]
@@ -196,7 +208,7 @@ def audio_augmentation(waveform: Tensor, sample_rate: int):
     # Signal to noise ratios
     # https://en.wikipedia.org/wiki/Signal-to-noise_ratio
     # snr_dbs = torch.tensor([20, 10, 3])
-    snr_db = torch.tensor([choice([20, 10, 3])])
+    snr_db = torch.tensor([choice(snr_dbs)])
     noised_up = F.add_noise(
         waveform=torch.stack([waveform]), noise=torch.stack([noise]), snr=snr_db
     )
@@ -211,11 +223,29 @@ def audio_augmentation(waveform: Tensor, sample_rate: int):
     # torchaudio.save("10db.wav", noised_up[1], 44100)
     # torchaudio.save("3db.wav", noised_up[2], 44100)
 
-    # timestrech_transform = T.TimeStretch(fixed_rate=np.random.uniform(0.5, 2.0))
-
-    # timestrech_transform = timestrech_transform(waveform)
+    # Adding Noise can cause NaN to appear
     augmented = remove_NaN(augmented)
     return augmented
+
+
+def time_stretch(waveform: Tensor, sample_rate: int, make_same_length_as_input=True):
+    speed = torchaudio.transforms.Speed(
+        orig_freq=sample_rate,
+        factor=np.random.uniform(0.5, 2.0),
+    )
+
+    stretched = speed(waveform, lengths=Tensor([waveform.shape[0]]))
+    print(f"before stretch {waveform.shape}")
+    print(f"speed {speed.factor}")
+    print(f"expected length {waveform.shape[0]/speed.factor}")
+    print(f"new length {stretched[0].shape}")
+    print(stretched[1].shape)
+    print(stretched[0])
+    torchaudio.save(
+        f"{PROJECT_ROOT}\\stretched.wav", stretched[0], sample_rate=sample_rate
+    )
+    input("real::")
+    return stretched
 
 
 def remove_NaN(t: tensor, replacement=0.0):
@@ -254,6 +284,9 @@ class AudioDataset(Dataset):
     def __getitem__(self, idx):
         file_path = self.file_list[idx]
         label = self.labels[idx] if self.label_mode else -1
+
+        if self.augmentation_mode:
+            print(file_path)
         # return {"image": waveform, "label": label}
 
         processed_audio = self.transform(file_path, AudioDataset.augmentation_mode)
