@@ -90,17 +90,19 @@ def main():
     # Fürs testen wird die Augmentation ausgeschaltet
     full_data_set.set_augmentation_mode(False)
 
-    test(
+    accuracy = test(
         test_dataloader=torch.utils.data.DataLoader(
             test_dataset, batch_size=10, shuffle=True
         ),
         model=model,
     )
 
+    print(f"Accuracy: {accuracy}%")
+
     # 5: Modell Speichern
 
     save_model(
-        file_path=f"{MODEL_SAVE_LOCATION}\\model_{get_current_timestamp_formatted()}",
+        file_path=f"{MODEL_SAVE_LOCATION}\\model_{get_current_timestamp_formatted()}_{accuracy:.2f}%",
         model=model,
         classes_dict=full_data_set.get_labels_dict(),
     )
@@ -114,8 +116,6 @@ def main():
     eval_dataset = AudioDataset(
         root_dir=EVAL_LOCATION, transform=audio_processing, label_mode=False
     )
-
-    input("here:")
 
     validate(
         validate_dataset=eval_dataset,
@@ -175,7 +175,7 @@ def audio_processing(file_path, apply_augmentation: bool = False):
 def audio_augmentation(waveform: Tensor, sample_rate: int):
     augmented = waveform
     augmented = add_noise(waveform=augmented, sample_rate=sample_rate)
-    augmented = convolve_reverb(waveform=augmented, sample_rate=sample_rate)
+    # augmented = convolve_reverb(waveform=augmented, sample_rate=sample_rate)
 
     return augmented
 
@@ -368,7 +368,7 @@ def train(dataloader, optimizer, model, criterion, epochs):
         )
 
 
-def test(test_dataloader, model):
+def test(test_dataloader, model) -> float:
     correct = 0
     total = 0
     model.eval()
@@ -381,7 +381,8 @@ def test(test_dataloader, model):
             print(f"input labels: {labels}")
             print(f"predicted labels: {predicted}")
 
-    print(f"Accuracy: {100.0 * float(correct) / float(total)}%")
+    accuracy = 100.0 * float(correct) / float(total)
+    return accuracy
 
 
 def validate(validate_dataset: AudioDataset, model, class_dict: dict):
