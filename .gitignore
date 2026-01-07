@@ -213,6 +213,8 @@ __marimo__/
 /Eval
 /Noise
 /Impulse Responses
+/.benchmarks
 
 *.pth
 *.wav
+/pytest-help.txt
