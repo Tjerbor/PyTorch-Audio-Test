@@ -23,23 +23,23 @@ from torch import Tensor, tensor
 
 
 PROJECT_ROOT = Path(__file__).parent.parent
-SAMPLE_LOCATION = f"{PROJECT_ROOT}\\Samples"
+SAMPLE_LOCATION = f"{PROJECT_ROOT}/Samples"
 TARGET_SAMPLERATE = 32000
 TARGET_SAMPLE_LENGTH_IN_SECONDS = 1
 TARGET_SAMPLE_LENGTH = int(TARGET_SAMPLERATE * TARGET_SAMPLE_LENGTH_IN_SECONDS)
-NOISE_LOCATION = f"{PROJECT_ROOT}\\Noise"
+NOISE_LOCATION = f"{PROJECT_ROOT}/Noise"
 NOISE_PATHS = []
-IMPULSE_RESPONSE_LOCATION = f"{PROJECT_ROOT}\\Impulse Responses"
+IMPULSE_RESPONSE_LOCATION = f"{PROJECT_ROOT}/Impulse Responses"
 IR_PATHS = []
-EVAL_LOCATION = f"{PROJECT_ROOT}\\Eval"
-MODEL_SAVE_LOCATION = f"{PROJECT_ROOT}\\Models"
+EVAL_LOCATION = f"{PROJECT_ROOT}/Eval"
+MODEL_SAVE_LOCATION = f"{PROJECT_ROOT}/Models"
 
 
 def main():
     global NOISE_PATHS
     global IR_PATHS
-    NOISE_PATHS = glob.glob(f"{NOISE_LOCATION}\\**\\*.wav", recursive=True)
-    IR_PATHS = glob.glob(f"{IMPULSE_RESPONSE_LOCATION}\\**\\*.wav", recursive=True)
+    NOISE_PATHS = glob.glob(f"{NOISE_LOCATION}/**/*.wav", recursive=True)
+    IR_PATHS = glob.glob(f"{IMPULSE_RESPONSE_LOCATION}/**/*.wav", recursive=True)
 
     # -1: Feststellen ob Umgebung CUDA supported
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -102,7 +102,7 @@ def main():
     # 5: Modell Speichern
 
     save_model(
-        file_path=f"{MODEL_SAVE_LOCATION}\\model_{get_current_timestamp_formatted()}_{accuracy:.2f}%",
+        file_path=f"{MODEL_SAVE_LOCATION}/model_{get_current_timestamp_formatted()}_{accuracy:.2f}%",
         model=model,
         classes_dict=full_data_set.get_labels_dict(),
     )
@@ -123,11 +123,11 @@ def main():
         class_dict=classes_dict,
     )
 
-    exit(0)
+    # exit(0)
 
 
 def read_data(path):
-    samples = glob.glob(f"{path}\\**\\*.wav", recursive=True)
+    samples = glob.glob(f"{path}/**/*.wav", recursive=True)
     return samples
 
 
@@ -239,7 +239,7 @@ def convolve_reverb(waveform: Tensor, sample_rate: int):
     convolved = F.fftconvolve(waveform, impulse_response[0], mode="same")
 
     # torchaudio.save(
-    #     f"{PROJECT_ROOT}\\{Path(IR_path).name}.wav", convolved, sample_rate=sample_rate
+    #     f"{PROJECT_ROOT}/{Path(IR_path).name}.wav", convolved, sample_rate=sample_rate
     # )
     # input("askdljhf")
 
@@ -274,7 +274,7 @@ class AudioDataset(Dataset):
                     self.file_list.append(file_path)
                     self.labels.append(self.labels_dict[label])
         else:
-            self.file_list = glob.glob(f"{root_dir}\\**\\*.wav", recursive=True)
+            self.file_list = glob.glob(f"{root_dir}/**/*.wav", recursive=True)
 
     def __len__(self):
         return len(self.file_list)
@@ -427,7 +427,7 @@ def load_model(file_path):
 
 
 def load_most_recent_model(folder_path):
-    models = sorted(glob.glob(f"{folder_path}\\*.pth"))
+    models = sorted(glob.glob(f"{folder_path}/*.pth"))
     if len(models) == 0:
         print(f"No models found in {folder_path}")
         exit(1)
@@ -455,6 +455,11 @@ def vorschau_eval():
 
 
 if __name__ == "__main__":
+    start_time = datetime.datetime.now()
     main()
+    end_time = datetime.datetime.now()
+    print(f"started: {start_time}")
+    print(f"ended: {end_time}")
+    print(f"duration: {end_time - start_time}")
 
     # vorschau_eval()
